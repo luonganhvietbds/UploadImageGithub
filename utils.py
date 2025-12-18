@@ -2,15 +2,14 @@ import unicodedata
 import re
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 import io
-import numpy as np
 
 # ======================================
-# 👑 1) Remove accents – SEO filename format
+# 1) SEO-FRIENDLY FILENAME
 # ======================================
 def remove_accents(text: str) -> str:
     """
-    Chuyển tiếng Việt có dấu → không dấu + SEO friendly.
-    Ví dụ: "Ảnh Bán Hàng" → "anh-ban-hang"
+    Chuyển tiếng Việt có dấu → không dấu + định dạng SEO.
+    Ví dụ: 'Ảnh Bán Hàng' → 'anh-ban-hang'
     """
     text = unicodedata.normalize('NFKD', text)
     text = text.encode("ascii", "ignore").decode("ascii")
@@ -20,7 +19,7 @@ def remove_accents(text: str) -> str:
 
 
 # ======================================
-# 👑 2) Auto-fix EXIF orientation
+# 2) FIX ORIENTATION (EXIF) – ảnh điện thoại hay bị xoay
 # ======================================
 def fix_orientation(img: Image.Image) -> Image.Image:
     try:
@@ -30,10 +29,10 @@ def fix_orientation(img: Image.Image) -> Image.Image:
 
 
 # ======================================
-# 👑 3) Resize ảnh – giữ nguyên tỷ lệ
+# 3) RESIZE PRO
 # ======================================
 def resize_image(img: Image.Image, max_width: int) -> Image.Image:
-    """Resize ảnh theo max_width, tự động tính tỷ lệ."""
+    """Resize ảnh giữ nguyên tỉ lệ."""
     img = fix_orientation(img)
 
     w, h = img.size
@@ -41,17 +40,15 @@ def resize_image(img: Image.Image, max_width: int) -> Image.Image:
         return img
 
     ratio = max_width / w
-    new_size = (int(w * ratio), int(h * ratio))
+    new_size = (int(max_width), int(h * ratio))
     return img.resize(new_size, Image.LANCZOS)
 
 
 # ======================================
-# 👑 4) Compress ảnh – JPG format PRO
+# 4) COMPRESS JPG PRO
 # ======================================
-def compress_image(img: Image.Image, quality: int = 80) -> bytes:
-    """
-    Nén ảnh JPG theo quality. Tự convert sang RGB để tránh lỗi.
-    """
+def compress_image(img: Image.Image, quality: int = 85) -> bytes:
+    """Nén ảnh JPG thành bytes để upload GitHub."""
     buffer = io.BytesIO()
     rgb = img.convert("RGB")
     rgb.save(buffer, format="JPEG", quality=quality, optimize=True)
@@ -59,32 +56,28 @@ def compress_image(img: Image.Image, quality: int = 80) -> bytes:
 
 
 # ======================================
-# 👑 5) Save ảnh thành WebP (để SEO tốt hơn)
+# 5) EXPORT WEBP – siêu nhẹ, chuẩn SEO
 # ======================================
-def export_webp(img: Image.Image, quality: int = 80) -> bytes:
-    """Xuất WebP – nhẹ hơn JPG"""
+def export_webp(img: Image.Image, quality: int = 85) -> bytes:
     buffer = io.BytesIO()
     img.save(buffer, format="WEBP", quality=quality)
     return buffer.getvalue()
 
 
 # ======================================
-# 👑 6) Tạo thumbnail
+# 6) THUMBNAIL PRO
 # ======================================
 def create_thumbnail(img: Image.Image, width: int = 300) -> Image.Image:
-    """
-    Tạo thumbnail chiều rộng = width px.
-    """
+    """Tạo thumbnail chiều rộng = width px."""
     img = fix_orientation(img)
-
     w, h = img.size
     ratio = width / w
     new_size = (width, int(h * ratio))
-    return img.copy().resize(new_size, Image.LANCZOS)
+    return img.resize(new_size, Image.LANCZOS)
 
 
 # ======================================
-# 👑 7) Watermark text PRO
+# 7) WATERMARK TEXT PRO
 # ======================================
 def add_watermark_text(
     img: Image.Image,
@@ -94,21 +87,19 @@ def add_watermark_text(
     position: str = "bottom-right"
 ) -> Image.Image:
     """
-    Thêm watermark với vị trí tùy chọn:
-    - top-left
-    - top-right
-    - bottom-left
-    - bottom-right (mặc định)
+    Thêm watermark chữ vào ảnh:
+    - Vị trí: top-left, top-right, bottom-left, bottom-right
+    - Tự scale font theo kích thước ảnh
+    - Độ mờ tùy chỉnh
     """
-
-    img = img.copy()
+    img = fix_orientation(img).copy()
     draw = ImageDraw.Draw(img)
 
     width, height = img.size
 
-    # Auto scale font theo kích thước ảnh
+    # Auto scale font size
     if font_size is None:
-        font_size = int(width / 40)
+        font_size = max(20, int(width / 40))
 
     try:
         font = ImageFont.truetype("arial.ttf", font_size)
@@ -116,10 +107,9 @@ def add_watermark_text(
         font = ImageFont.load_default()
 
     text_w, text_h = draw.textsize(text, font)
-
     margin = int(width * 0.02)
 
-    # Vị trí watermark
+    # Vị trí text
     positions = {
         "top-left": (margin, margin),
         "top-right": (width - text_w - margin, margin),
@@ -129,61 +119,58 @@ def add_watermark_text(
 
     pos = positions.get(position, positions["bottom-right"])
 
-    # Vẽ text mờ
-    draw.text(pos, text, font=font, fill=(255, 255, 255, opacity))
+    draw.text(pos, text, fill=(255, 255, 255, opacity), font=font)
 
     return img
 
 
 # ======================================
-# 👑 8) Watermark Logo PRO
+# 8) WATERMARK LOGO PRO
 # ======================================
 def add_watermark_logo(
     img: Image.Image,
     logo_img: Image.Image,
     scale: float = 0.18,
-    position="bottom-right"
+    position: str = "bottom-right"
 ) -> Image.Image:
     """
     Thêm watermark logo PNG (có alpha).
-    - scale = chiều rộng logo so với ảnh chính
+    - Scale theo chiều rộng ảnh
+    - Vị trí tùy chọn
+    - Hỗ trợ logo không có alpha
     """
 
-    img = img.copy()
-    img = fix_orientation(img)
-
-    w, h = img.size
+    img = fix_orientation(img).copy()
+    width, height = img.size
 
     # Resize logo
-    logo_w = int(w * scale)
+    logo_w = int(width * scale)
     ratio = logo_w / logo_img.width
     logo = logo_img.resize((logo_w, int(logo_img.height * ratio)), Image.LANCZOS)
-
     logo = logo.convert("RGBA")
 
     lw, lh = logo.size
-    margin = int(w * 0.02)
+    margin = int(width * 0.02)
 
-    # Vị trí
     positions = {
         "top-left": (margin, margin),
-        "top-right": (w - lw - margin, margin),
-        "bottom-left": (margin, h - lh - margin),
-        "bottom-right": (w - lw - margin, h - lh - margin),
+        "top-right": (width - lw - margin, margin),
+        "bottom-left": (margin, height - lh - margin),
+        "bottom-right": (width - lw - margin, height - lh - margin),
     }
 
     pos = positions.get(position, positions["bottom-right"])
 
-    # Paste logo với alpha
     img.paste(logo, pos, logo)
 
     return img
 
 
 # ======================================
-# 👑 9) Check nếu ảnh bị hỏng
+# 9) VALIDATE IMAGE
 # ======================================
 def is_image_valid(file) -> bool:
+    """Kiểm tra xem file có phải ảnh hợp lệ không."""
     try:
         Image.open(file)
         return True
@@ -192,8 +179,8 @@ def is_image_valid(file) -> bool:
 
 
 # ======================================
-# 👑 10) Export công cụ log
+# 10) DEBUG LOG
 # ======================================
-def debug_log(msg):
-    """Log hiển thị trong streamlit console hoặc debug"""
+def debug_log(msg: str):
+    """Log dùng để debug (Streamlit Cloud console)."""
     print(f"[DEBUG] {msg}")
