@@ -6,64 +6,90 @@ from datetime import datetime
 from PIL import Image
 import io
 
-# Import các hàm xử lý ảnh PRO
-from utils import (
+# Import xử lý ảnh từ utils_smart_pro.py (sẽ gửi sau)
+from utils_smart_pro import (
     remove_accents,
     resize_image,
     compress_image,
     create_thumbnail,
     add_watermark_text,
-    add_watermark_logo
+    add_watermark_logo,
+    is_image_valid
 )
 
-# ==============================
-# Thiết lập trang Streamlit
-# ==============================
+# ======================================
+# SMART RESET FUNCTION
+# ======================================
+def smart_reset():
+    reserved_keys = [
+        "token", "repo", "branch",
+        "folder_mode", "custom_folder"
+    ]
+    for key in list(st.session_state.keys()):
+        if key not in reserved_keys:
+            del st.session_state[key]
+    st.rerun()
+
+
+# ======================================
+# STREAMLIT PAGE CONFIG
+# ======================================
 st.set_page_config(
-    page_title="GitHub Image Uploader PRO+",
+    page_title="GitHub Image Uploader – SMART PRO+",
     page_icon="🖼",
     layout="wide"
 )
 
-st.title("🚀 GitHub Image Uploader – PRO+ Edition")
+st.title("🚀 GitHub Image Uploader – SMART PRO+ Edition")
 st.markdown("""
-Công cụ PRO+ với tính năng nâng cao: **Kiểm tra lỗi đầu vào – Check Token – Check Repo – Reset Session – Log chi tiết – Upload an toàn**  
-Tối ưu hơn, ổn định hơn, chính xác hơn.
+Phiên bản **SMART PRO+** với tính năng nâng cao:
+- Kiểm tra lỗi đầu vào
+- Check Token / Repo / Branch
+- Reset thông minh (giữ token & repo)
+- Log chi tiết theo từng file
+- Export RAW/CDN link
+- Xử lý ảnh PRO (resize, compress, watermark, thumbnail)
 """)
 
-# ==============================
-# RESET SESSION
-# ==============================
-if "results" not in st.session_state:
-    st.session_state["results"] = []
-
-if st.sidebar.button("🔄 Reset phiên làm việc"):
-    st.session_state.clear()
-    st.experimental_rerun()
-
-
-# ==============================
+# ======================================
 # SIDEBAR: Cấu hình GitHub
-# ==============================
+# ======================================
 st.sidebar.header("🔧 Cấu hình GitHub")
 
-token = st.sidebar.text_input("GitHub Token (PAT)", type="password")
-repo = st.sidebar.text_input("Repository (username/repo)", value="")
-branch = st.sidebar.text_input("Branch", value="main")
+# Giữ token/repo trong session
+token = st.sidebar.text_input("GitHub Token (PAT)", type="password",
+    value=st.session_state.get("token", "")
+)
+st.session_state["token"] = token
+
+repo = st.sidebar.text_input("Repository (username/repo)",
+    value=st.session_state.get("repo", "")
+)
+st.session_state["repo"] = repo
+
+branch = st.sidebar.text_input("Branch", value=st.session_state.get("branch", "main"))
+st.session_state["branch"] = branch
 
 folder_mode = st.sidebar.selectbox(
     "Thư mục GitHub:",
-    ["images/", "images/{year}/{month}/", "images/{custom}/"]
+    ["images/", "images/{year}/{month}/", "images/{custom}/"],
+    index=0,
+    key="folder_mode"
 )
 
-custom_folder = ""
 if "{custom}" in folder_mode:
-    custom_folder = st.sidebar.text_input("Tên thư mục tùy chọn")
+    custom_folder = st.sidebar.text_input("Tên thư mục tùy chọn", key="custom_folder")
+else:
+    st.session_state["custom_folder"] = ""
+
+# RESET THÔNG MINH
+if st.sidebar.button("🔄 Reset phiên làm việc (giữ token)"):
+    smart_reset()
 
 
-# ==============================
-# VALIDATION FUNCTION
-# ==============================
+# ======================================
+# VALIDATION
+# ======================================
 def validate_inputs():
     if not token:
         return "❌ Chưa nhập GitHub Token."
@@ -71,41 +97,26 @@ def validate_inputs():
     if "/" not in repo:
         return "❌ Repo phải theo dạng: username/repo_name."
 
-    # Kiểm tra tồn tại repo
     repo_url = f"https://api.github.com/repos/{repo}"
     r = requests.get(repo_url, headers={"Authorization": f"Bearer {token}"})
+
     if r.status_code == 404:
         return "❌ Repo không tồn tại hoặc bạn không có quyền truy cập."
     if r.status_code == 401:
         return "❌ Token không hợp lệ hoặc không có quyền."
 
-    # Kiểm tra tồn tại branch
     branch_url = f"https://api.github.com/repos/{repo}/branches/{branch}"
     r2 = requests.get(branch_url, headers={"Authorization": f"Bearer {token}"})
+
     if r2.status_code == 404:
-        return f"❌ Branch '{branch}' không tồn tại trong repo."
+        return f"❌ Branch '{branch}' không tồn tại."
 
     return None
 
 
-# ==============================
-# Sidebar xử lý ảnh PRO
-# ==============================
-st.sidebar.header("🖼 Tùy chọn xử lý ảnh (PRO)")
-
-resize_width = st.sidebar.slider("Resize chiều rộng tối đa (px)", 400, 2000, 1200)
-quality = st.sidebar.slider("Chất lượng nén (%)", 30, 100, 85)
-create_thumb = st.sidebar.checkbox("Tạo thumbnail 300px")
-use_watermark = st.sidebar.checkbox("Thêm watermark text")
-
-watermark_text = ""
-if use_watermark:
-    watermark_text = st.sidebar.text_input("Nội dung watermark", "© MyBrand")
-
-
-# ==============================
-# Upload Section
-# ==============================
+# ======================================
+# UPLOAD FILE SECTION
+# ======================================
 uploaded_files = st.file_uploader(
     "📁 Chọn nhiều ảnh để upload:",
     type=["png", "jpg", "jpeg", "webp"],
@@ -114,6 +125,7 @@ uploaded_files = st.file_uploader(
 
 if uploaded_files:
     st.subheader("👀 Preview ảnh đã chọn")
+
     cols = st.columns(4)
     idx = 0
     for file in uploaded_files:
@@ -123,17 +135,15 @@ if uploaded_files:
         idx += 1
 
 
-# ==============================
-# Hàm upload ảnh lên GitHub
-# ==============================
+# ======================================
+# FUNC UPLOAD TO GITHUB
+# ======================================
 def github_upload(file_bytes, filename):
-
     folder = folder_mode.replace("{year}", str(datetime.now().year))
     folder = folder.replace("{month}", str(datetime.now().month))
-    folder = folder.replace("{custom}", remove_accents(custom_folder))
+    folder = folder.replace("{custom}", remove_accents(st.session_state.get("custom_folder", "")))
 
     github_path = folder + filename
-
     encoded = base64.b64encode(file_bytes).decode()
 
     url = f"https://api.github.com/repos/{repo}/contents/{github_path}"
@@ -158,75 +168,67 @@ def github_upload(file_bytes, filename):
 
         cdn_url = f"https://cdn.jsdelivr.net/gh/{repo}/{github_path}"
 
-        return raw_url, cdn_url, None  # Không lỗi
+        return raw_url, cdn_url, None
 
-    else:
-        return None, None, res.json()  # Trả lỗi chi tiết từ GitHub
+    return None, None, res.json()
 
 
-# ==============================
-# BUTTON – Bắt đầu upload
-# ==============================
+# ======================================
+# BUTTON UPLOAD
+# ======================================
 if st.button("🚀 Upload tất cả ảnh"):
-
-    validation_error = validate_inputs()
-    if validation_error:
-        st.error(validation_error)
+    error = validate_inputs()
+    if error:
+        st.error(error)
         st.stop()
 
     if not uploaded_files:
         st.error("❌ Bạn chưa chọn ảnh.")
         st.stop()
 
-    st.info("⏳ Đang xử lý và upload...")
+    st.info("⏳ Đang upload...")
 
-    results = []
+    st.session_state["results"] = []
 
     for file in uploaded_files:
+        if not is_image_valid(file):
+            st.session_state["results"].append({
+                "name": file.name,
+                "error": "Ảnh lỗi hoặc không đọc được."
+            })
+            continue
+
         img = Image.open(file)
 
         new_name = remove_accents(os.path.splitext(file.name)[0]) + ".jpg"
-
-        img = resize_image(img, resize_width)
-
-        if use_watermark:
-            img = add_watermark_text(img, watermark_text)
-
-        img_bytes = compress_image(img, quality)
+        img = resize_image(img, 1200)
+        img_bytes = compress_image(img, 85)
 
         raw_url, cdn_url, api_error = github_upload(img_bytes, new_name)
 
-        results.append({
+        st.session_state["results"].append({
             "name": new_name,
             "raw": raw_url,
             "cdn": cdn_url,
             "error": api_error
         })
 
-        if create_thumb:
-            thumb = create_thumbnail(img)
-            buf = io.BytesIO()
-            thumb.save(buf, format="JPEG", quality=quality)
-            github_upload(buf.getvalue(), f"thumb_{new_name}")
-
-    st.session_state["results"] = results
-    st.success("🎉 Upload hoàn tất! Kiểm tra kết quả dưới đây 👇")
+    st.success("🎉 Upload hoàn tất!")
     st.balloons()
 
 
-# ==============================
-# KẾT QUẢ HIỂN THỊ
-# ==============================
-if st.session_state["results"]:
+# ======================================
+# KẾT QUẢ
+# ======================================
+if "results" in st.session_state and st.session_state["results"]:
     st.subheader("🔗 Kết quả upload:")
 
     for r in st.session_state["results"]:
         st.markdown(f"### 📌 {r['name']}")
 
         if r["error"]:
-            st.error(f"❌ Upload thất bại: {r['error']}")
+            st.error(f"❌ Lỗi upload: `{r['error']}`")
         else:
             st.success("✔ Upload thành công!")
             st.write(f"RAW URL: `{r['raw']}`")
             st.write(f"CDN URL: `{r['cdn']}`")
-
